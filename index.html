@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Drone Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #canvas {
+            display: block;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 100%);
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            min-width: 250px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+        .control-value {
+            display: inline-block;
+            width: 50px;
+            text-align: right;
+            font-family: monospace;
+        }
+        h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .instructions {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid #ecf0f1;
+            font-size: 12px;
+            color: #555;
+        }
+        .instructions p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="controls">
+        <h3>Drone Controls</h3>
+        <div class="control-group">
+            <label>
+                Left Propeller: <span class="control-value" id="leftValue">0.00</span>
+            </label>
+            <input type="range" id="leftPropeller" min="-1" max="1" step="0.01" value="0">
+        </div>
+        <div class="control-group">
+            <label>
+                Right Propeller: <span class="control-value" id="rightValue">0.00</span>
+            </label>
+            <input type="range" id="rightPropeller" min="-1" max="1" step="0.01" value="0">
+        </div>
+        <div class="instructions">
+            <p><strong>Keyboard Controls:</strong></p>
+            <p>↑ / W: Increase both propellers</p>
+            <p>↓ / S: Decrease both propellers</p>
+            <p>← / A: Increase left, decrease right</p>
+            <p>→ / D: Increase right, decrease left</p>
+        </div>
+    </div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Drone state
+        const drone = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            vx: 0,
+            vy: 0,
+            angle: 0,
+            angularVelocity: 0,
+            width: 100,
+            height: 25,
+            wingLength: 75,
+            wingWidth: 15
+        };
+
+        // Physics constants
+        const gravity = 0.3;
+        const dampingFactor = 0.98;
+        const rotationDamping = 0.95;
+
+        // Propeller power
+        let leftPower = 0;
+        let rightPower = 0;
+        let leftPropellerAngle = 0;
+        let rightPropellerAngle = 0;
+
+        // UI Elements
+        const leftSlider = document.getElementById('leftPropeller');
+        const rightSlider = document.getElementById('rightPropeller');
+        const leftValueDisplay = document.getElementById('leftValue');
+        const rightValueDisplay = document.getElementById('rightValue');
+
+        // Update propeller power from sliders
+        leftSlider.addEventListener('input', (e) => {
+            leftPower = parseFloat(e.target.value);
+            leftValueDisplay.textContent = leftPower.toFixed(2);
+        });
+
+        rightSlider.addEventListener('input', (e) => {
+            rightPower = parseFloat(e.target.value);
+            rightValueDisplay.textContent = rightPower.toFixed(2);
+        });
+
+        // Keyboard controls
+        const keys = {};
+        
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            handleKeyboard();
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        function handleKeyboard() {
+            const powerChange = 0.1;
+            
+            // Up (increase both propellers)
+            if (keys['arrowup'] || keys['w']) {
+                leftPower = Math.min(1, leftPower + powerChange);
+                rightPower = Math.min(1, rightPower + powerChange);
+            }
+            
+            // Down (decrease both propellers)
+            if (keys['arrowdown'] || keys['s']) {
+                leftPower = Math.max(-1, leftPower - powerChange);
+                rightPower = Math.max(-1, rightPower - powerChange);
+            }
+            
+            // Left (increase left, decrease right)
+            if (keys['arrowleft'] || keys['a']) {
+                leftPower = Math.min(1, leftPower + powerChange);
+                rightPower = Math.max(-1, rightPower - powerChange);
+            }
+            
+            // Right (increase right, decrease left)
+            if (keys['arrowright'] || keys['d']) {
+                rightPower = Math.max(-1, rightPower - powerChange);
+                leftPower = Math.min(1, leftPower + powerChange);
+            }
+            
+            // Update sliders
+            leftSlider.value = leftPower;
+            rightSlider.value = rightPower;
+            leftValueDisplay.textContent = leftPower.toFixed(2);
+            rightValueDisplay.textContent = rightPower.toFixed(2);
+        }
+
+        // Draw functions
+        function drawDrone() {
+            ctx.save();
+            ctx.translate(drone.x, drone.y);
+            ctx.rotate(drone.angle);
+
+            // Draw body
+            ctx.fillStyle = '#2c3e50';
+            ctx.fillRect(-drone.width / 2, -drone.height / 2, drone.width, drone.height);
+
+            // Draw left wing
+            ctx.fillStyle = '#34495e';
+            ctx.fillRect(-drone.width / 2 - 10, -drone.wingLength / 2, drone.wingWidth, drone.wingLength);
+
+            // Draw right wing
+            ctx.fillRect(drone.width / 2 - 5, -drone.wingLength / 2, drone.wingWidth, drone.wingLength);
+
+            // Draw left propeller
+            ctx.save();
+            ctx.translate(-drone.width / 2 - 2, -drone.wingLength / 2 + 10);
+            ctx.rotate(leftPropellerAngle);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(-20, -2.5, 40, 5);
+            ctx.restore();
+
+            // Draw right propeller
+            ctx.save();
+            ctx.translate(drone.width / 2 + 3, -drone.wingLength / 2 + 10);
+            ctx.rotate(rightPropellerAngle);
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(-20, -2.5, 40, 5);
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        function updatePhysics() {
+            // Apply gravity
+            drone.vy += gravity;
+
+            // Apply thrust from propellers (considering rotation)
+            const totalThrust = (leftPower + rightPower) * 0.5;
+            const thrustAngle = drone.angle;
+            
+            drone.vy -= totalThrust * Math.cos(thrustAngle);
+            drone.vx += totalThrust * Math.sin(thrustAngle);
+
+            // Apply rotation based on propeller difference
+            const torque = (rightPower - leftPower) * 0.01;
+            drone.angularVelocity += torque;
+
+            // Apply damping
+            drone.vx *= dampingFactor;
+            drone.vy *= dampingFactor;
+            drone.angularVelocity *= rotationDamping;
+
+            // Update position
+            drone.x += drone.vx;
+            drone.y += drone.vy;
+            drone.angle += drone.angularVelocity;
+
+            // Boundary checking with margins
+            const margin = 100;
+            if (drone.x > canvas.width - margin) {
+                drone.x = canvas.width - margin;
+                drone.vx = 0;
+            }
+            if (drone.x < margin) {
+                drone.x = margin;
+                drone.vx = 0;
+            }
+            if (drone.y > canvas.height - margin) {
+                drone.y = canvas.height - margin;
+                drone.vy = 0;
+            }
+            if (drone.y < margin) {
+                drone.y = margin;
+                drone.vy = 0;
+            }
+
+            // Rotate propellers for visual effect
+            leftPropellerAngle += leftPower * 0.3;
+            rightPropellerAngle += rightPower * 0.3;
+        }
+
+        // Animation loop
+        function animate() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Update physics
+            updatePhysics();
+
+            // Draw drone
+            drawDrone();
+
+            requestAnimationFrame(animate);
+        }
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>
